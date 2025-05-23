@@ -4,7 +4,7 @@
 <head>
     <style>
         body {
-            background-color: hsl(0, 0%, 16%);
+            background: hsl(0, 0%, 16%);
             height: 100dvh;
             width: 100dvw;
             margin: 0;
@@ -14,7 +14,7 @@
         }
 
         canvas {
-            background-color: hsl(0, 0%, 32%);
+            background: hsl(0, 0%, 32%);
             height: 98dvh;
             width: 49dvh;
         }
@@ -24,98 +24,232 @@
 <body>
     <canvas id="canvas" width="256" height="512"></canvas>
     <script>
-        class Input {
-            #start = null;
-            #queue = [];
-            static #THRESHOLD = 32;
-            static #DIR = {
+        class InputController {
+            static THRESHOLD = 32;
+            static DIRECTION = {
                 RIGHT: 6,
                 LEFT: 4,
                 DOWN: 2,
                 UP: 8
             };
 
+            #startPosition = null;
+            #inputQueue = [];
+
             constructor() {
-                addEventListener("pointerdown", e => this.#start = {
+                this.#addEventListeners();
+            }
+
+            #addEventListeners() {
+                addEventListener("pointerdown", e => this.#startPosition = {
                     x: e.clientX,
                     y: e.clientY
                 });
-                addEventListener("pointermove", e => this.#onMove(e));
-                addEventListener("pointerup", () => this.#start = null);
+                addEventListener("pointermove", e => this.#handlePointerMove(e));
+                addEventListener("pointerup", () => this.#startPosition = null);
             }
 
-            #onMove(e) {
-                if (!this.#start) return;
-                const dx = e.clientX - this.#start.x,
-                    dy = e.clientY - this.#start.y;
-                if (Math.abs(dx) > Math.abs(dy)) {
-                    if (dx > Input.#THRESHOLD) this.#queue.push(Input.#DIR.RIGHT), this.#start.x += dx;
-                    else if (dx < -Input.#THRESHOLD) this.#queue.push(Input.#DIR.LEFT), this.#start.x += dx;
-                } else {
-                    if (dy > Input.#THRESHOLD) this.#queue.push(Input.#DIR.DOWN), this.#start.y += dy;
-                    else if (dy < -Input.#THRESHOLD) this.#queue.push(Input.#DIR.UP), this.#start.y += dy;
+            #handlePointerMove(e) {
+                if (!this.#startPosition) return;
+
+                const deltaX = e.clientX - this.#startPosition.x;
+                const deltaY = e.clientY - this.#startPosition.y;
+                const direction = this.#getDirection(deltaX, deltaY);
+
+                if (direction) {
+                    this.#inputQueue.push(direction);
+                    this.#updateStartPosition(deltaX, deltaY);
                 }
             }
 
-            poll() {
-                return this.#queue.shift() ?? null;
+            #getDirection(deltaX, deltaY) {
+                const {
+                    THRESHOLD,
+                    DIRECTION
+                } = InputController;
+
+                if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                    if (deltaX > THRESHOLD) return DIRECTION.RIGHT;
+                    if (deltaX < -THRESHOLD) return DIRECTION.LEFT;
+                } else {
+                    if (deltaY > THRESHOLD) return DIRECTION.DOWN;
+                    if (deltaY < -THRESHOLD) return DIRECTION.UP;
+                }
+                return null;
+            }
+
+            #updateStartPosition(deltaX, deltaY) {
+                this.#startPosition.x += deltaX;
+                this.#startPosition.y += deltaY;
+            }
+
+            getNextInput() {
+                return this.#inputQueue.shift() ?? null;
             }
         }
 
         class Ball {
+            static RADIUS = 16;
+            static MOVEMENT_STEP = 32;
+
             constructor(x, y, color) {
                 this.x = x;
                 this.y = y;
                 this.color = color;
-                this.radius = 16;
+                this.radius = Ball.RADIUS;
+            }
+
+            update(allBalls) {
+                this.#moveBy(0, 1, allBalls);
+            }
+
+            moveInDirection(direction, allBalls) {
+                const {
+                    DIRECTION
+                } = InputController;
+                const {
+                    MOVEMENT_STEP
+                } = Ball;
+                const movements = {
+                    [DIRECTION.RIGHT]: [MOVEMENT_STEP, 0],
+                    [DIRECTION.LEFT]: [-MOVEMENT_STEP, 0],
+                    [DIRECTION.DOWN]: [0, MOVEMENT_STEP],
+                    [DIRECTION.UP]: [0, -MOVEMENT_STEP]
+                };
+
+                const [deltaX, deltaY] = movements[direction] || [0, 0];
+                this.#moveBy(deltaX, deltaY, allBalls);
+            }
+
+            #moveBy(deltaX, deltaY, allBalls) {
+                const originalPosition = {
+                    x: this.x,
+                    y: this.y
+                };
+                this.#setPosition(this.x + deltaX, this.y + deltaY, allBalls, originalPosition);
+            }
+
+            #setPosition(newX, newY, allBalls, originalPosition) {
+                this.x = newX;
+                this.y = newY;
+
+                const overlappingBall = this.#findOverlap(allBalls);
+                if (overlappingBall) {
+                    this.#resolveCollision(overlappingBall, allBalls, originalPosition);
+                }
+            }
+
+            #findOverlap(allBalls) {
+                return allBalls.find(other =>
+                    other !== this &&
+                    Math.hypot(this.x - other.x, this.y - other.y) < this.radius + other.radius
+                );
+            }
+
+            #resolveCollision(overlappingBall, allBalls, originalPosition) {
+                const deltaY = this.y - overlappingBall.y;
+
+                if (deltaY === 0) {
+                    this.#restorePosition(originalPosition);
+                } else {
+                    this.y = overlappingBall.y + Math.sign(deltaY) * (overlappingBall.radius + this.radius);
+                    if (this.#findOverlap(allBalls)) {
+                        this.#restorePosition(originalPosition);
+                    }
+                }
+            }
+
+            #restorePosition(originalPosition) {
+                this.x = originalPosition.x;
+                this.y = originalPosition.y;
             }
         }
 
-        class CanvasRenderer {
+        class Renderer {
             constructor(canvas) {
-                this.ctx = canvas.getContext("2d");
-                this.canvas = canvas;
+                this.context = canvas.getContext("2d");
+                this.width = canvas.width;
+                this.height = canvas.height;
             }
 
-            draw(balls) {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-                balls.forEach(b => {
-                    this.ctx.fillStyle = `hsl(${(b.color - 1) * 60},100%,50%)`;
-                    this.ctx.beginPath();
-                    this.ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-                    this.ctx.fill();
-                });
+            render(balls) {
+                this.#clearCanvas();
+                balls.forEach(ball => this.#drawBall(ball));
+            }
+
+            #clearCanvas() {
+                this.context.clearRect(0, 0, this.width, this.height);
+            }
+
+            #drawBall(ball) {
+                this.context.fillStyle = `hsl(${(ball.color - 1) * 60}, 100%, 50%)`;
+                this.context.beginPath();
+                this.context.arc(ball.x, ball.y, ball.radius, 0, 2 * Math.PI);
+                this.context.fill();
             }
         }
 
         class Game {
+            static COLOR_COUNT = 4;
+
             constructor(canvas) {
-                this.input = new Input();
-                this.renderer = new CanvasRenderer(canvas);
-                this.balls = [
-                    new Ball(16, 16, Game.randColor()),
-                    new Ball(48, 48, Game.randColor()),
-                    new Ball(80, 80, Game.randColor()),
-                ];
-                this.activeBall = new Ball(112, 48, Game.randColor());
+                this.inputController = new InputController();
+                this.renderer = new Renderer(canvas);
+                this.balls = this.#initializeBalls();
+                this.activeBall = new Ball(112, 48, Game.#getRandomColor());
                 this.balls.push(this.activeBall);
             }
 
-            static randColor() {
-                return Math.floor(Math.random() * 4) + 1;
+            #initializeBalls() {
+                const positions = [
+                    [48, 48],
+                    [16, 16],
+                    [80, 80],
+                    [16, 80],
+                    [80, 16],
+                    [16, 144]
+                ];
+                return positions.map(([x, y]) => new Ball(x, y, Game.#getRandomColor()));
             }
 
-            update() {
-                this.input.poll();
-                this.renderer.draw(this.balls);
+            static #getRandomColor() {
+                return 1 + Math.floor(Math.random() * Game.COLOR_COUNT);
             }
 
-            run() {
-                setInterval(() => this.update(), 1000 / 60);
+            #update() {
+                this.#sortBallsByDepth();
+                this.#handleInput();
+                this.#updatePhysics();
+                this.renderer.render(this.balls);
+            }
+
+            #sortBallsByDepth() {
+                this.balls.sort((a, b) => b.y - a.y);
+            }
+
+            #handleInput() {
+                const direction = this.inputController.getNextInput();
+                if (direction) {
+                    this.activeBall.moveInDirection(direction, this.balls);
+                }
+            }
+
+            #updatePhysics() {
+                this.balls
+                    .filter(ball => ball !== this.activeBall)
+                    .forEach(ball => ball.update(this.balls));
+            }
+
+            start() {
+                const gameLoop = () => {
+                    this.#update();
+                    requestAnimationFrame(gameLoop);
+                };
+                gameLoop();
             }
         }
 
-        new Game(document.getElementById("canvas")).run();
+        new Game(document.getElementById("canvas")).start();
     </script>
 </body>
 
