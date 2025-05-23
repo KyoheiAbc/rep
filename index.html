@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        body {
+            background-color: hsl(0, 0%, 16%);
+            height: 100dvh;
+            width: 100dvw;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            background-color: hsl(0, 0%, 32%);
+            height: 98dvh;
+            width: 49dvh;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="canvas" width="256" height="512"></canvas>
+    <script>
+        setInterval(() => {
+            console.log(Math.random());
+        }, 1000 / 60);
+    </script>
+</body>
+
+</html>
