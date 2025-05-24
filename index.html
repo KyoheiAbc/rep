@@ -45,8 +45,25 @@
                     x: e.clientX,
                     y: e.clientY
                 });
+                addEventListener("touchstart", e => {
+                    if (e.touches.length > 0) {
+                        this.#startPosition = {
+                            x: e.touches[0].clientX,
+                            y: e.touches[0].clientY
+                        };
+                    }
+                });
                 addEventListener("pointermove", e => this.#handlePointerMove(e));
+                addEventListener("touchmove", e => {
+                    if (e.touches.length > 0) {
+                        this.#handlePointerMove({
+                            clientX: e.touches[0].clientX,
+                            clientY: e.touches[0].clientY
+                        });
+                    }
+                });
                 addEventListener("pointerup", () => this.#startPosition = null);
+                addEventListener("touchend", () => this.#startPosition = null);
             }
 
             #handlePointerMove(e) {
