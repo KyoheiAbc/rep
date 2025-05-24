@@ -24,234 +24,295 @@
 <body>
     <canvas id="canvas" width="256" height="512"></canvas>
     <script>
-        class InputController {
+        class InputManager {
             static THRESHOLD = 32;
-            static DIRECTION = {
+            static DIRECTIONS = {
                 RIGHT: 6,
                 LEFT: 4,
                 DOWN: 2,
                 UP: 8
             };
 
-            #startPosition = null;
+            #startPos = null;
             #inputQueue = [];
 
             constructor() {
-                this.#addEventListeners();
+                this.#bindEvents();
             }
 
-            #addEventListeners() {
-                addEventListener("pointerdown", e => this.#startPosition = {
-                    x: e.clientX,
-                    y: e.clientY
-                });
-                addEventListener("touchstart", e => {
-                    if (e.touches.length > 0) {
-                        this.#startPosition = {
-                            x: e.touches[0].clientX,
-                            y: e.touches[0].clientY
-                        };
-                    }
-                });
-                addEventListener("pointermove", e => this.#handlePointerMove(e));
-                addEventListener("touchmove", e => {
-                    if (e.touches.length > 0) {
-                        this.#handlePointerMove({
-                            clientX: e.touches[0].clientX,
-                            clientY: e.touches[0].clientY
-                        });
-                    }
-                });
-                addEventListener("pointerup", () => this.#startPosition = null);
-                addEventListener("touchend", () => this.#startPosition = null);
+            #bindEvents() {
+                const events = [
+                    ['pointerdown', 'touchstart'],
+                    ['pointermove', 'touchmove'],
+                    ['pointerup', 'touchend']
+                ];
+
+                events[0].forEach(event =>
+                    addEventListener(event, e => this.#handleStart(e))
+                );
+                events[1].forEach(event =>
+                    addEventListener(event, e => this.#handleMove(e))
+                );
+                events[2].forEach(event =>
+                    addEventListener(event, () => this.#startPos = null)
+                );
             }
 
-            #handlePointerMove(e) {
-                if (!this.#startPosition) return;
+            #handleStart(e) {
+                const touch = e.touches?.[0] || e;
+                this.#startPos = {
+                    x: touch.clientX,
+                    y: touch.clientY
+                };
+            }
 
-                const deltaX = e.clientX - this.#startPosition.x;
-                const deltaY = e.clientY - this.#startPosition.y;
-                const direction = this.#getDirection(deltaX, deltaY);
+            #handleMove(e) {
+                if (!this.#startPos) return;
 
+                const touch = e.touches?.[0] || e;
+                const delta = {
+                    x: touch.clientX - this.#startPos.x,
+                    y: touch.clientY - this.#startPos.y
+                };
+
+                const direction = this.#getDirection(delta);
                 if (direction) {
                     this.#inputQueue.push(direction);
-                    this.#updateStartPosition(deltaX, deltaY);
+                    this.#startPos.x += delta.x;
+                    this.#startPos.y += delta.y;
                 }
             }
 
-            #getDirection(deltaX, deltaY) {
+            #getDirection({
+                x,
+                y
+            }) {
                 const {
                     THRESHOLD,
-                    DIRECTION
-                } = InputController;
-
-                if (Math.abs(deltaX) > Math.abs(deltaY)) {
-                    if (deltaX > THRESHOLD) return DIRECTION.RIGHT;
-                    if (deltaX < -THRESHOLD) return DIRECTION.LEFT;
-                } else {
-                    if (deltaY > THRESHOLD) return DIRECTION.DOWN;
-                    if (deltaY < -THRESHOLD) return DIRECTION.UP;
+                    DIRECTIONS
+                } = InputManager;
+                if (Math.abs(x) > Math.abs(y)) {
+                    return x > THRESHOLD ? DIRECTIONS.RIGHT : x < -THRESHOLD ? DIRECTIONS.LEFT : null;
                 }
-                return null;
+                return y > THRESHOLD ? DIRECTIONS.DOWN : y < -THRESHOLD ? DIRECTIONS.UP : null;
             }
 
-            #updateStartPosition(deltaX, deltaY) {
-                this.#startPosition.x += deltaX;
-                this.#startPosition.y += deltaY;
-            }
-
-            getNextInput() {
+            getInput() {
                 return this.#inputQueue.shift() ?? null;
             }
         }
 
-        class Ball {
+        class GameObject {
             static RADIUS = 16;
-            static MOVEMENT_STEP = 32;
+            static GRID_SIZE = 32;
 
-            constructor(x, y, color) {
-                this.x = x;
-                this.y = y;
+            constructor(x, y, color = 0) {
+                this.position = {
+                    x,
+                    y
+                };
                 this.color = color;
-                this.radius = Ball.RADIUS;
+                this.radius = GameObject.RADIUS;
             }
 
-            update(allBalls) {
-                this.#moveBy(0, 1, allBalls);
+            get x() {
+                return this.position.x;
+            }
+            get y() {
+                return this.position.y;
+            }
+            set x(value) {
+                this.position.x = value;
+            }
+            set y(value) {
+                this.position.y = value;
             }
 
-            moveInDirection(direction, allBalls) {
-                const {
-                    DIRECTION
-                } = InputController;
-                const {
-                    MOVEMENT_STEP
-                } = Ball;
-                const movements = {
-                    [DIRECTION.RIGHT]: [MOVEMENT_STEP, 0],
-                    [DIRECTION.LEFT]: [-MOVEMENT_STEP, 0],
-                    [DIRECTION.DOWN]: [0, MOVEMENT_STEP],
-                    [DIRECTION.UP]: [0, -MOVEMENT_STEP]
-                };
-
-                const [deltaX, deltaY] = movements[direction] || [0, 0];
-                this.#moveBy(deltaX, deltaY, allBalls);
+            checkCollision(other) {
+                return Math.hypot(this.x - other.x, this.y - other.y) < this.radius + other.radius;
             }
 
-            #moveBy(deltaX, deltaY, allBalls) {
-                const originalPosition = {
-                    x: this.x,
-                    y: this.y
-                };
-                this.#setPosition(this.x + deltaX, this.y + deltaY, allBalls, originalPosition);
+            findCollision(objects) {
+                return objects.find(obj => obj !== this && this.checkCollision(obj));
             }
 
-            #setPosition(newX, newY, allBalls, originalPosition) {
-                this.x = newX;
-                this.y = newY;
+            moveTo(x, y, objects) {
+                const original = { ...this.position };
+                this.position = { x, y };
 
-                const overlappingBall = this.#findOverlap(allBalls);
-                if (overlappingBall) {
-                    this.#resolveCollision(overlappingBall, allBalls, originalPosition);
+                const collision = this.findCollision(objects);
+                if (collision) {
+                    this.#handleCollision(collision, objects, original);
                 }
             }
 
-            #findOverlap(allBalls) {
-                return allBalls.find(other =>
-                    other !== this &&
-                    Math.hypot(this.x - other.x, this.y - other.y) < this.radius + other.radius
-                );
-            }
+            #handleCollision(collidedObject, allObjects, originalPosition) {
+                // Only handle vertical collisions
+                const verticalDistance = this.y - collidedObject.y;
 
-            #resolveCollision(overlappingBall, allBalls, originalPosition) {
-                const deltaY = this.y - overlappingBall.y;
-
-                if (deltaY === 0) {
-                    this.#restorePosition(originalPosition);
+                if (verticalDistance === 0) {
+                    // Direct horizontal collision, revert to original position
+                    this.position = originalPosition;
                 } else {
-                    this.y = overlappingBall.y + Math.sign(deltaY) * (overlappingBall.radius + this.radius);
-                    if (this.#findOverlap(allBalls)) {
-                        this.#restorePosition(originalPosition);
+                    // Try to push vertically to resolve collision
+                    const sumOfRadii = this.radius + collidedObject.radius;
+                    this.y = collidedObject.y + Math.sign(verticalDistance) * sumOfRadii;
+
+                    // If still colliding, revert completely
+                    if (this.findCollision(allObjects)) {
+                        this.position = originalPosition;
                     }
                 }
             }
 
-            #restorePosition(originalPosition) {
-                this.x = originalPosition.x;
-                this.y = originalPosition.y;
+            // Direction-based movement mapping
+            static #MOVEMENT_VECTORS = {
+                [InputManager.DIRECTIONS.RIGHT]: [GameObject.GRID_SIZE, 0],
+                [InputManager.DIRECTIONS.LEFT]: [-GameObject.GRID_SIZE, 0],
+                [InputManager.DIRECTIONS.DOWN]: [0, GameObject.GRID_SIZE],
+                [InputManager.DIRECTIONS.UP]: [0, -GameObject.GRID_SIZE]
+            };
+
+            moveByDirection(direction, objects) {
+                const [deltaX, deltaY] = GameObject.#MOVEMENT_VECTORS[direction] || [0, 0];
+                this.moveTo(this.x + deltaX, this.y + deltaY, objects);
+            }
+
+            applyGravity(objects) {
+                this.moveTo(this.x, this.y + 1, objects);
+            }
+
+            update(objects) {
+                this.applyGravity(objects);
             }
         }
 
-        class Renderer {
+        class GameObjectPair {
+            constructor(x, y, colorGenerator) {
+                this.primary = new GameObject(x, y, colorGenerator());
+                this.secondary = new GameObject(x, y - GameObject.GRID_SIZE, colorGenerator());
+                this.offset = {
+                    x: 0,
+                    y: -GameObject.GRID_SIZE
+                };
+            }
+
+            get objects() {
+                return [this.primary, this.secondary];
+            }
+
+            moveByDirection(direction, allObjects) {
+                const otherObjects = allObjects.filter(obj => !this.objects.includes(obj));
+                const originalPos = {
+                    x: this.secondary.x,
+                    y: this.secondary.y
+                };
+
+                this.primary.moveByDirection(direction, otherObjects);
+                this.#syncSecondary();
+
+                if (this.secondary.findCollision(otherObjects)) {
+                    this.secondary.position = originalPos;
+                    this.#syncPrimary();
+                    this.secondary.moveByDirection(direction, otherObjects);
+                    this.#syncPrimary();
+
+                    if (this.primary.findCollision(otherObjects)) {
+                        this.secondary.position = originalPos;
+                        this.#syncPrimary();
+                    }
+                }
+            }
+
+            #syncSecondary() {
+                this.secondary.x = this.primary.x + this.offset.x;
+                this.secondary.y = this.primary.y + this.offset.y;
+            }
+
+            #syncPrimary() {
+                this.primary.x = this.secondary.x - this.offset.x;
+                this.primary.y = this.secondary.y - this.offset.y;
+            }
+        }
+
+        class GameRenderer {
             constructor(canvas) {
-                this.context = canvas.getContext("2d");
-                this.width = canvas.width;
-                this.height = canvas.height;
+                this.ctx = canvas.getContext("2d");
+                this.canvas = canvas;
             }
 
-            render(balls) {
-                this.#clearCanvas();
-                balls.forEach(ball => this.#drawBall(ball));
+            render(objects) {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                objects.forEach(obj => this.#drawObject(obj));
             }
 
-            #clearCanvas() {
-                this.context.clearRect(0, 0, this.width, this.height);
-            }
-
-            #drawBall(ball) {
-                this.context.fillStyle = `hsl(${(ball.color - 1) * 60}, 100%, 50%)`;
-                this.context.beginPath();
-                this.context.arc(ball.x, ball.y, ball.radius, 0, 2 * Math.PI);
-                this.context.fill();
+            #drawObject(obj) {
+                this.ctx.fillStyle = `hsl(${(obj.color - 1) * 60}, 100%, 50%)`;
+                this.ctx.beginPath();
+                this.ctx.arc(obj.x, obj.y, obj.radius, 0, 2 * Math.PI);
+                this.ctx.fill();
             }
         }
 
-        class Game {
+        class PuzzleGame {
             static COLOR_COUNT = 4;
+            static GRID_SIZE = 32;
 
             constructor(canvas) {
-                this.inputController = new InputController();
-                this.renderer = new Renderer(canvas);
-                this.balls = this.#initializeBalls();
-                this.activeBall = new Ball(112, 48, Game.#getRandomColor());
-                this.balls.push(this.activeBall);
+                this.inputManager = new InputManager();
+                this.renderer = new GameRenderer(canvas);
+                this.objects = this.#createBoundaryWalls();
+
+                this.#addRandomObjects();
+                this.playerPair = new GameObjectPair(16 + 96, 16 + 64, () => PuzzleGame.#randomColor());
+                this.objects.push(...this.playerPair.objects);
             }
 
-            #initializeBalls() {
-                return Array.from({ length: 128 }, (_, i) => {
-                    const x = i % 8, y = Math.floor(i / 8);
-                    return (x === 0 || x === 7 || y === 0 || y === 15)
-                        ? new Ball(x * 32 + 16, y * 32 + 16, 0)
-                        : null;
-                }).filter(Boolean);
+            #createBoundaryWalls() {
+                const walls = [];
+                for (let i = 0; i < 128; i++) {
+                    const x = i % 8,
+                        y = Math.floor(i / 8);
+                    if (x === 0 || x === 7 || y === 0 || y === 15) {
+                        walls.push(new GameObject(x * 32 + 16, y * 32 + 16, 0));
+                    }
+                }
+                return walls;
             }
 
-            static #getRandomColor() {
-                return 1 + Math.floor(Math.random() * Game.COLOR_COUNT);
+            #addRandomObjects() {
+                const positions = [
+                    [80, 144],
+                    [112, 192],
+                    [176, 224]
+                ];
+                positions.forEach(([x, y]) =>
+                    this.objects.push(new GameObject(x, y, PuzzleGame.#randomColor()))
+                );
+            }
+
+            static #randomColor() {
+                return 1 + Math.floor(Math.random() * PuzzleGame.COLOR_COUNT);
             }
 
             #update() {
-                this.#sortBallsByDepth();
+                this.objects.sort((a, b) => b.y - a.y);
                 this.#handleInput();
                 this.#updatePhysics();
-                this.renderer.render(this.balls);
-            }
-
-            #sortBallsByDepth() {
-                this.balls.sort((a, b) => b.y - a.y);
+                this.renderer.render(this.objects);
             }
 
             #handleInput() {
-                const direction = this.inputController.getNextInput();
+                const direction = this.inputManager.getInput();
                 if (direction) {
-                    this.activeBall.moveInDirection(direction, this.balls);
+                    this.playerPair.moveByDirection(direction, this.objects);
                 }
             }
 
             #updatePhysics() {
-                this.balls
-                    .filter(ball => ball !== this.activeBall && ball.color !== 0)
-                    .forEach(ball => ball.update(this.balls));
+                this.objects
+                    .filter(obj => !this.playerPair.objects.includes(obj) && obj.color !== 0)
+                    .forEach(obj => obj.update(this.objects));
             }
 
             start() {
@@ -263,7 +324,7 @@
             }
         }
 
-        new Game(document.getElementById("canvas")).start();
+        new PuzzleGame(document.getElementById("canvas")).start();
     </script>
 </body>
 
