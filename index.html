@@ -68,6 +68,7 @@
 
             #handleMove(e) {
                 if (!this.#startPos) return;
+                e.preventDefault();
 
                 const touch = e.touches?.[0] || e;
                 const delta = {
