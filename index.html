@@ -218,15 +218,12 @@
             }
 
             #initializeBalls() {
-                const positions = [
-                    [48, 48],
-                    [16, 16],
-                    [80, 80],
-                    [16, 80],
-                    [80, 16],
-                    [16, 144]
-                ];
-                return positions.map(([x, y]) => new Ball(x, y, Game.#getRandomColor()));
+                return Array.from({ length: 128 }, (_, i) => {
+                    const x = i % 8, y = Math.floor(i / 8);
+                    return (x === 0 || x === 7 || y === 0 || y === 15)
+                        ? new Ball(x * 32 + 16, y * 32 + 16, 0)
+                        : null;
+                }).filter(Boolean);
             }
 
             static #getRandomColor() {
@@ -253,7 +250,7 @@
 
             #updatePhysics() {
                 this.balls
-                    .filter(ball => ball !== this.activeBall)
+                    .filter(ball => ball !== this.activeBall && ball.color !== 0)
                     .forEach(ball => ball.update(this.balls));
             }
 
